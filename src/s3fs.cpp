@@ -2035,7 +2035,12 @@ static int s3fs_unlink(const char *path) {
   if(result != 0)
     return result;
 
-  delete_stat_cache_entry(path);
+  if(S_ISDIR(st.st_mode)) {
+    std::string path_str = std::string(path)+"/";
+    delete_stat_cache_entry(path_str.c_str());
+  }
+  else
+    delete_stat_cache_entry(path);
 
   return 0;
 }
