@@ -2004,7 +2004,8 @@ static int s3fs_unlink(const char *path) {
 	  return result;
   }
 
-  if(S_ISDIR(st.st_mode)) {
+  int n = strlen(path);
+  if (S_ISDIR(st.st_mode) && (path[n-1] != '/')) {
 	  string path_with_slash = string(path) + "/";
 	  s3_realpath = get_realpath(path_with_slash.c_str());
   } else {
@@ -2344,24 +2345,24 @@ static int rename_directory(const char *from, const char *to) {
             	// check if key is the "from/" folder object itself
             	string from_with_slash = string(from).substr(1) + "/";
             	if (strcmp(key.c_str(), from_with_slash.c_str()) != 0) {
-				   num_keys++;
-				   path = "/" + key;
+		   num_keys++;
+		   path = "/" + key;
 
-				   new_path = path;
-				   if(mount_prefix.size() > 0)
-					 new_path.replace(0, mount_prefix.substr(0, mount_prefix.size()).size() + from_path.size(), to_path);
-				   else
-					 new_path.replace(0, from_path.size(), to_path);
+		   new_path = path;
+		   if(mount_prefix.size() > 0) {
+			 new_path.replace(0, mount_prefix.substr(0, mount_prefix.size()).size() + from_path.size(), to_path);
+                         path.replace(0, mount_prefix.length(), "");
+                   }
+		   else
+			 new_path.replace(0, from_path.size(), to_path);
 
-				   if (Size.compare("0") == 0  && key.find_last_of('/') == key.length() -1) {
-					   is_dir = 1;
-				   } else {
-					   is_dir = 0;
-				   }
-
-				   // push this one onto the stack
-				   tail = add_mvnode(head, (char *)path.c_str(), (char *)new_path.c_str(), is_dir);
-				}
+		   if (Size.compare("0") == 0  && key.find_last_of('/') == key.length() -1) {
+			   is_dir = 1;
+		   } else {
+			   is_dir = 0;
+		   }
+		   tail = add_mvnode(head, (char *)path.c_str(), (char *)new_path.c_str(), is_dir);
+		}
             }
           } // if (cur_node->children != NULL) {
         } // if (cur_node_name == "Contents") {
@@ -2750,6 +2751,12 @@ static int s3fs_readdir(
       s3_objects = s3_objects->next;
       continue;
     }
+    // check if it is a directory in the cache
+    std::string dirpath = fullpath+"/";
+    if(get_stat_cache_entry(dirpath.c_str(), NULL) == 0) {
+      s3_objects = s3_objects->next;
+      continue;
+    }
 
     if (!s3_objects->is_common_prefix) {
     	// regular file
@@ -2880,7 +2887,8 @@ static int s3fs_readdir(
         st.st_gid = 0;
 
         // remove last char /
-        response.path.resize(response.path.length() -1);
+        // Why - I suspect we want the trailing '/'
+        // response.path.resize(response.path.length() -1);
         add_stat_cache_entry(response.path.c_str(), &st);
 
         // cleanup
