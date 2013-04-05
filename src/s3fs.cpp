@@ -1663,6 +1663,10 @@ static int _s3fs_getattr(const char *path, struct stat *stbuf, bool resolve_no_e
   if(get_stat_cache_entry(path, stbuf) == 0)
     return 0;
 
+  string path_with_slash = string(path)+"/";
+  if(get_stat_cache_entry(path_with_slash.c_str(), stbuf) == 0)
+    return 0;
+
   s3_realpath = get_realpath(path);
 
   body.text = (char *)malloc(1);
@@ -1949,8 +1953,11 @@ static int s3fs_mkdir(const char *path, mode_t mode) {
     cout << "mkdir[path=" << path << "]" << endl;
 
   // folder object ends with /
-  string directory_object_path = string(path) + "/";
-  path = directory_object_path.c_str();
+  int n = strlen(path);
+  if (path[n-1] != '/') {
+    string directory_object_path = string(path) + "/";
+    path = directory_object_path.c_str();
+  }
 
   s3_realpath = get_realpath(path);
   resource = urlEncode(service_path + bucket + s3_realpath);
@@ -2036,7 +2043,8 @@ static int s3fs_unlink(const char *path) {
   if(result != 0)
     return result;
 
-  if(S_ISDIR(st.st_mode)) {
+  n = strlen(path);
+  if (S_ISDIR(st.st_mode) && (path[n-1] != '/')) {
     std::string path_str = std::string(path)+"/";
     delete_stat_cache_entry(path_str.c_str());
   }
@@ -2165,9 +2173,21 @@ static int clone_directory_object(const char *from, const char *to) {
   int result;
 //  mode_t mode;
   headers_t meta;
+  int n;
+  string from_with_slash, to_with_slash;
 
-  string from_with_slash = string(from) + "/";
-  string to_with_slash = string(to) + "/";
+
+  n = strlen(from);
+  if (from[n-1] != '/')
+      from_with_slash = string(from) + "/";
+  else
+      from_with_slash = string(from);
+
+  n = strlen(to);
+  if (to[n-1] != '/')
+      to_with_slash = string(to) + "/";
+  else
+      to_with_slash = string(to);
 
   if(foreground)
     printf("clone_directory_object [from=%s] [to=%s]\n", from, to);
@@ -2197,10 +2217,7 @@ static int clone_directory_object(const char *from, const char *to) {
 
   result = put_headers(to_with_slash.c_str(), meta);
 
-  if(result != 0)
-    return result;
-
-  return 0;
+  return result;
 }
 
 static int rename_directory(const char *from, const char *to) {
@@ -2238,11 +2255,8 @@ static int rename_directory(const char *from, const char *to) {
   to_path.assign(to);
   is_dir = 1;
 
-  // printf("calling create_mvnode\n");
-  // head = create_mvnode((char *)from, (char *)to, is_dir);
   head = create_mvnode((char *)from_path.c_str(), (char *)to_path.c_str(), is_dir);
   tail = head;
-  // printf("back from create_mvnode\n");
 
   while (IsTruncated == "true") {
     string query;
@@ -2307,10 +2321,7 @@ static int rename_directory(const char *from, const char *to) {
     // process list objects (from/) result
     xmlDocPtr doc = xmlReadMemory(body.text, body.size, "", NULL, 0);
     if (doc != NULL && doc->children != NULL) {
-      for (xmlNodePtr cur_node = doc->children->children;
-           cur_node != NULL;
-           cur_node = cur_node->next) {
-
+      for (xmlNodePtr cur_node = doc->children->children; cur_node != NULL; cur_node = cur_node->next) {
         string cur_node_name(reinterpret_cast<const char *>(cur_node->name));
         if(cur_node_name == "IsTruncated")
           IsTruncated = reinterpret_cast<const char *>(cur_node->children->content);
@@ -2319,10 +2330,7 @@ static int rename_directory(const char *from, const char *to) {
           if (cur_node->children != NULL) {
             string LastModified;
             string Size;
-            for (xmlNodePtr sub_node = cur_node->children;
-                 sub_node != NULL;
-                 sub_node = sub_node->next) {
-
+            for (xmlNodePtr sub_node = cur_node->children; sub_node != NULL; sub_node = sub_node->next) {
               if (sub_node->type == XML_ELEMENT_NODE) {
                 string elementName = reinterpret_cast<const char*>(sub_node->name);
                 if (sub_node->children != NULL) {
@@ -2344,7 +2352,13 @@ static int rename_directory(const char *from, const char *to) {
             if (key.size() > 0) {
             	// check if key is the "from/" folder object itself
             	string from_with_slash = string(from).substr(1) + "/";
-            	if (strcmp(key.c_str(), from_with_slash.c_str()) != 0) {
+                string to_check = from_with_slash;
+                if (mount_prefix.size() > 0) {
+                  to_check = mount_prefix+"/"+from_with_slash;
+                  to_check.erase(0,1);
+                }
+
+            	if (strcmp(key.c_str(), to_check.c_str()) != 0) {
 		   num_keys++;
 		   path = "/" + key;
 
@@ -2426,7 +2440,7 @@ static int rename_directory(const char *from, const char *to) {
   // Iterate over old the directories, bottoms up and remove
   do {
     if(my_tail->is_dir) {
-      result = s3fs_unlink( my_tail->old_path);
+      result = s3fs_unlink(my_tail->old_path);
       if(result != 0) {
          free_mvnodes(head);
          syslog(LOG_ERR, "rename_dir: s3fs_unlink returned an error");
