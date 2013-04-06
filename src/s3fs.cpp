@@ -962,10 +962,7 @@ static int put_local_fd_small_file(const char* path, headers_t meta, int fd) {
   free(s3_realpath);
   destroy_curl_handle(curl);
 
-  if(result != 0)
-    return result;
-
-  return 0;
+  return result;
 }
 
 static int put_local_fd_big_file(const char* path, headers_t meta, int fd) {
@@ -1893,10 +1890,7 @@ static int create_file_object(const char *path, mode_t mode) {
   destroy_curl_handle(curl);
   free(s3_realpath);
 
-  if(result != 0)
-    return result;
-
-  return 0;
+  return result;
 }
 
 static int s3fs_mknod(const char *path, mode_t mode, dev_t rdev) {
@@ -1909,10 +1903,7 @@ static int s3fs_mknod(const char *path, mode_t mode, dev_t rdev) {
   // a symbolic link, this call fails with an EEXIST error.
   result = create_file_object(path, mode);
 
-  if(result != 0)
-     return result;
-
-  return 0;
+  return result;
 }
 
 static int s3fs_create(const char *path, mode_t mode, struct fuse_file_info *fi) {
@@ -1985,10 +1976,7 @@ static int s3fs_mkdir(const char *path, mode_t mode) {
   destroy_curl_handle(curl);
   free(s3_realpath);
 
-  if(result != 0)
-    return result;
-
-  return 0;
+  return result;
 }
 
 // aka rm
@@ -3806,7 +3794,7 @@ static void get_access_keys (void) {
     return;
   }
 
-  // 6 - from the system default location - FCC
+  // 6 - from the system default location
   AWSAccessTokenExpiry = 0;
   if (iam_role.length() > 0) {
     if (get_iam_credentials())
