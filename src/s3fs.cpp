@@ -3299,20 +3299,31 @@ static int s3fs_utimens(const char *path, const struct timespec ts[2]) {
   if(foreground) 
     cout << "s3fs_utimens[path=" << path << "][mtime=" << str(ts[1].tv_sec) << "]" << endl;
 
-  result = get_headers(path, meta);
+  struct stat st;
+  result = s3fs_getattr(path, &st);
+  if (result != 0) {
+    return result;
+  }
+  std::string path_str;
+  if (!(S_ISDIR(st.st_mode )))
+    path_str = std::string(path);
+  else
+    path_str = std::string(path)+"/";
+
+  result = get_headers(path_str.c_str(), meta);
   if(result != 0)
     return result;
 
-  s3_realpath = get_realpath(path);
+  s3_realpath = get_realpath(path_str.c_str());
   meta["x-amz-meta-mtime"] = str(ts[1].tv_sec);
   meta["x-amz-copy-source"] = urlEncode("/" + bucket + s3_realpath);
   meta["x-amz-metadata-directive"] = "REPLACE";
   free(s3_realpath);
 
   if(foreground) 
-    cout << "  calling put_headers [path=" << path << "]" << endl;
+    cout << "  calling put_headers [path=" << path_str << "]" << endl;
 
-  result = put_headers(path, meta);
+  result = put_headers(path_str.c_str(), meta);
 
   return result;
 }
