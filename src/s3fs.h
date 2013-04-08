@@ -114,7 +114,6 @@ static int append_objects_from_xml(const char *xml, struct s3_object **head);
 static const char *get_next_marker(const char *xml);
 static std::string get_object_name(xmlDocPtr doc, xmlNodePtr node);
 static std::string get_string(xmlDocPtr doc, xmlNodePtr node);
-static long get_time(xmlDocPtr doc, xmlNodePtr node);
 
 static int put_headers(const char *path, headers_t meta);
 static int put_multipart_headers(const char *path, headers_t meta);

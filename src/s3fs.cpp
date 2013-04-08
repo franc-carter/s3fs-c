@@ -262,32 +262,30 @@ void free_mvnodes(MVNODE *head) {
 }
 
 /*
- * Convert the Token expiry time from the instance meta-data into
- * epoch seconds
-*/
-time_t expiry_to_epoch(std::string expiry)
+ * Convert and iso8601 date string to epoch seconds
+ */
+time_t iso8601_to_epoch(const char *time_str)
 {
-    struct tm tm;
+  struct tm ctime;
 
-    memset(&tm, 0, sizeof(struct tm));
-    char *zone = strptime(expiry.c_str(), "%Y-%m-%dT%H:%M:%S", &tm);
-    if (zone[0] != (char)'Z') {
-        // time parsing in C is a horror!
-        syslog(LOG_ERR, "Expiry TimeZone is not 'Z' - this probably breaks things\n");  
-    }
-    char *origTZ = getenv("TZ");
-    setenv("TZ", "", 1);
-    tzset();
-    time_t expiry_t = mktime(&tm);
-    if (origTZ != NULL)
-        setenv("TZ", origTZ, 0);
-    else
-        unsetenv("TZ");
-    tzset();
+  memset(&ctime, 0, sizeof(struct tm));
+  char *zone = strptime(time_str, "%Y-%m-%dT%H:%M:%S", &ctime);
+  if (zone[0] != (char)'Z') {
+      // time parsing in C is a horror!
+      syslog(LOG_ERR, "Expiry TimeZone is not 'Z' - this probably breaks things\n");  
+  }
 
-    return expiry_t;
+  char *origTZ = getenv("TZ");
+  setenv("TZ", "", 1);
+  tzset();
+  time_t t = mktime(&ctime);
+  if (origTZ != NULL)
+      setenv("TZ", origTZ, 0);
+  else
+      unsetenv("TZ");
+
+  return t;
 }
-
 
 /*
  * Updates the AWS AccessKey, SecretKey and Token from
@@ -310,9 +308,8 @@ int get_iam_credentials()
         newToken = parse_line(line, "Token\" : \"");
       if (newExpiry == 0) {
         std::string expiry = parse_line(line, "Expiration\" : \"");
-        if (expiry.length() > 0) {
-            newExpiry = expiry_to_epoch(expiry);
-        }
+        if (expiry.length() > 0)
+            newExpiry = iso8601_to_epoch(expiry.c_str());
       }
     }
     size_t len1 = newAccessKey.length();
@@ -735,6 +732,8 @@ static int put_headers(const char *path, headers_t meta) {
   s3_realpath = get_realpath(path);
   resource = urlEncode(service_path + bucket + s3_realpath);
   url = host + resource;
+
+cerr << "put_headers: s3_realpath = " << s3_realpath << endl;
 
   body.text = (char *)malloc(1);
   body.size = 0;
@@ -3081,7 +3080,10 @@ static int append_objects_from_xml(const char *xml, struct s3_object **s3_object
 
     xmlXPathObjectPtr last_modified_xml = xmlXPathEvalExpression((xmlChar *) "s3:LastModified", ctx);
 	xmlNodeSetPtr last_modified_nodes = last_modified_xml->nodesetval;
-	long last_modified = get_time(doc, last_modified_nodes->nodeTab[0]->xmlChildrenNode);
+        xmlNodePtr node = last_modified_nodes->nodeTab[0]->xmlChildrenNode;
+        char *time_string = (char *)xmlNodeListGetString(doc, node, 1);
+	time_t last_modified = iso8601_to_epoch(time_string);
+        xmlFree(time_string);
 
 	xmlXPathObjectPtr size_xml = xmlXPathEvalExpression((xmlChar *) "s3:Size", ctx);
 	xmlNodeSetPtr size_nodes = size_xml->nodesetval;
@@ -3182,17 +3184,6 @@ static std::string get_string(xmlDocPtr doc, xmlNodePtr node) {
   xmlFree(tmp);
 
   return str;
-}
-
-
-static long get_time(xmlDocPtr doc, xmlNodePtr node) {
-  char *time_string = (char *)xmlNodeListGetString(doc, node, 1);
-  tzset();
-  struct tm ctime;
-  memset(&ctime, 0, sizeof(struct tm));
-  strptime(time_string, "%FT%T%z", &ctime);
-  xmlFree(time_string);
-  return mktime(&ctime);
 }
 
 
@@ -3324,6 +3315,13 @@ static int s3fs_utimens(const char *path, const struct timespec ts[2]) {
     cout << "  calling put_headers [path=" << path_str << "]" << endl;
 
   result = put_headers(path_str.c_str(), meta);
+  if (S_ISDIR(st.st_mode )) {
+     struct stat stbuf;
+     if(get_stat_cache_entry(path_str.c_str(), &stbuf) == 0) {
+         stbuf.st_mtime = ts[1].tv_sec;
+         add_stat_cache_entry(path_str.c_str(), &stbuf);
+     }
+  }
 
   return result;
 }
