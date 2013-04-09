@@ -4248,6 +4248,28 @@ int main(int argc, char *argv[]) {
      // like checking for appropriate lengths and characters  
   }
 
+  if (use_cache.size() > 0) {
+     DIR *dir = opendir(use_cache.c_str());
+     if (dir == NULL) {
+       cerr << "Cache directory '" << use_cache << "' does not exist" << endl;
+       exit(EXIT_FAILURE);
+     }
+     closedir(dir);
+     string cache_path(use_cache + "/" + bucket);
+     dir = opendir(cache_path.c_str());
+     if (dir != NULL) {
+       struct dirent *dptr;
+       dptr = readdir(dir);
+       dptr = readdir(dir);
+       dptr = readdir(dir);
+       if (dptr != NULL) {
+         cerr << cache_path << " must be empty" << endl;
+         exit(EXIT_FAILURE);
+       }
+       closedir(dir);
+     }
+  }
+
   // There's room for more command line error checking
 
   // Check to see if the bucket name contains periods and https (SSL) is
