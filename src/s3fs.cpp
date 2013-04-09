@@ -2039,6 +2039,13 @@ static int s3fs_unlink(const char *path) {
   else
     delete_stat_cache_entry(path);
 
+  if (use_cache.size() > 0) {
+    string cache_path = string(use_cache+"/"+bucket+path);
+    if (S_ISDIR(st.st_mode))
+     rmdir(cache_path.c_str());
+    else
+      unlink(cache_path.c_str());
+  }
   return 0;
 }
 
