@@ -479,14 +479,25 @@ static string mybasename(string path) {
 }
 
 // mkdir --parents
-static int mkdirp(const string& path, mode_t mode) {
+static int mkdirp(const string &path, mode_t mode) {
   string base;
   string component;
   stringstream ss(path);
+
+  if(foreground) 
+    cout << "    mkdir(" << path << ")" << endl;
+
   while (getline(ss, component, '/')) {
+    struct stat statbuf;
     base += "/" + component;
-    /*if (*/mkdir(base.c_str(), mode)/* == -1);
-      return -1*/;
+    if (stat(base.c_str(), &statbuf) == 0) {
+      if (!S_ISDIR(statbuf.st_mode))
+        return -1;
+
+      continue;
+    }
+    if (mkdir(base.c_str(), mode) == -1)
+      return -1;
   }
   return 0;
 }
@@ -606,6 +617,8 @@ int get_local_fd(const char* path) {
     if(result != 0)
        return -result;
 
+    std::string cache_dir = mydirname(cache_path);
+    mkdirp(cache_dir, S_IRWXU);
     fd = open(cache_path.c_str(), O_RDWR); // ### TODO should really somehow obey flags here
     if(fd != -1) {
       if((fstat(fd, &st)) == -1) {
@@ -627,18 +640,8 @@ int get_local_fd(const char* path) {
 
   // need to download?
   if(fd == -1) {
-    mode_t mode = strtoul(responseHeaders["x-amz-meta-mode"].c_str(), (char **)NULL, 10);
-
     if(use_cache.size() > 0) {
-      // only download files, not folders
-      if (S_ISREG(mode)) {
-        /*if (*/mkdirp(resolved_path + mydirname(path), 0777)/* == -1)
-          return -errno*/;
-        fd = open(cache_path.c_str(), O_CREAT|O_RDWR|O_TRUNC, mode);
-      } else {
-        // its a folder; do *not* create anything in local cache... (###TODO do this in a better way)
-        fd = tmpfile_fd();
-      }
+        fd = open(cache_path.c_str(), O_CREAT|O_RDWR|O_TRUNC, S_IRWXU);
     } else {
       fd = tmpfile_fd();
     }
@@ -687,7 +690,7 @@ int get_local_fd(const char* path) {
     if(fd == -1)
       YIKES(-errno);
 
-    if(use_cache.size() > 0 && !S_ISLNK(mode)) {
+    if(use_cache.size() > 0) {
       // make the file's mtime match that of the file on s3
       struct utimbuf n_mtime;
       n_mtime.modtime = strtoul(responseHeaders["x-amz-meta-mtime"].c_str(), (char **) NULL, 10);
@@ -732,8 +735,6 @@ static int put_headers(const char *path, headers_t meta) {
   s3_realpath = get_realpath(path);
   resource = urlEncode(service_path + bucket + s3_realpath);
   url = host + resource;
-
-cerr << "put_headers: s3_realpath = " << s3_realpath << endl;
 
   body.text = (char *)malloc(1);
   body.size = 0;
